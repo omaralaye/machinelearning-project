@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
+import holidays
 
 def load_and_preprocess_data(filepath='electricitydemand.csv'):
     # Load the dataset
@@ -26,11 +27,26 @@ def load_and_preprocess_data(filepath='electricitydemand.csv'):
     df['weekofyear'] = df.index.isocalendar().week.astype(int)
     df['is_weekend'] = df.index.dayofweek.isin([5, 6]).astype(int)
 
+    # Cyclical Features
+    df['hour_sin'] = np.sin(2 * np.pi * df['hour'] / 24)
+    df['hour_cos'] = np.cos(2 * np.pi * df['hour'] / 24)
+    df['month_sin'] = np.sin(2 * np.pi * (df['month'] - 1) / 12)
+    df['month_cos'] = np.cos(2 * np.pi * (df['month'] - 1) / 12)
+
+    # Holiday Feature (assuming India as per edf.ipynb)
+    years = df.index.year.unique().astype(int).tolist()
+    holiday_calendar = holidays.IN(years=years)
+    df['is_holiday'] = df.index.to_series().dt.date.isin(holiday_calendar).astype(int)
+
     # Lagged Features
     df['Demand_lag_24hr'] = df['Demand'].shift(24)
     df['Demand_lag_168hr'] = df['Demand'].shift(168)
 
-    # Drop rows with NaN values created by lagging
+    # Rolling Statistics
+    df['demand_rolling_mean_24hr'] = df['Demand'].rolling(window=24).mean()
+    df['demand_rolling_std_24hr'] = df['Demand'].rolling(window=24).std()
+
+    # Drop rows with NaN values created by lagging and rolling
     df = df.dropna()
 
     return df
