@@ -7,3 +7,4 @@ xgboost
 tensorflow
 joblib
 holidays
+statsmodels

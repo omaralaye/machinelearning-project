@@ -121,7 +121,28 @@ def main():
     # Predict
     prediction = model.predict(features_df)[0]
 
-    print(f"\nForecasted Electricity Demand: {prediction:.2f}")
+    print(f"\nForecasted Electricity Demand: {prediction:.2f} MW")
+
+    # Optional Actual Input
+    actual_input = input("\nDo you have the actual demand value for this timestamp? (Enter value or press Enter to skip): ")
+    if actual_input.strip():
+        try:
+            actual_val = float(actual_input)
+            error = actual_val - prediction
+            # Using same range-normalization as in edf.py
+            actual_range = historical_df['Demand'].max() - historical_df['Demand'].min()
+            norm_error = np.abs(error) / actual_range if actual_range != 0 else 0
+
+            print(f"\n--- Comparison Report ---")
+            print(f"Actual Demand:     {actual_val:.2f} MW")
+            print(f"Forecasted Demand: {prediction:.2f} MW")
+            print(f"Error:             {error:.2f} MW")
+            print(f"Normalized Error (0-1): {norm_error:.4f}")
+
+            if np.abs(error/actual_val) > 0.10:
+                print("RED FLAG - ANOMALY FLAG: actual vs. forecast deviation exceeds 10%")
+        except ValueError:
+            print("Invalid actual value entered. Skipping comparison.")
 
 if __name__ == "__main__":
     main()

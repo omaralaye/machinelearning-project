@@ -7,8 +7,10 @@ def load_and_preprocess_data(filepath='electricitydemand.csv'):
     # Load the dataset
     df = pd.read_csv(filepath)
 
-    # Convert 'Timestamp' to datetime and set as index
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    # Convert 'Timestamp' to datetime and combine with hour for proper index
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%d-%b-%y', errors='coerce') + \
+                      pd.to_timedelta(df['hour'], unit='h', errors='coerce')
+    df = df.dropna(subset=['Timestamp'])
     df = df.set_index('Timestamp')
 
     # Drop rows where all values are missing
@@ -16,15 +18,17 @@ def load_and_preprocess_data(filepath='electricitydemand.csv'):
 
     # Fill remaining missing values if any (simple forward fill for time series)
     df = df.ffill()
+    df = df.dropna()
 
     # Feature Engineering
-    df['hour'] = df.index.hour
-    df['dayofweek'] = df.index.dayofweek
-    df['month'] = df.index.month
-    df['year'] = df.index.year
-    df['dayofyear'] = df.index.dayofyear
-    df['Quarter'] = df.index.quarter
-    df['weekofyear'] = df.index.isocalendar().week.astype(int)
+    df['hour'] = df.index.hour.values.astype(int)
+    df['dayofweek'] = df.index.dayofweek.values.astype(int)
+    df['month'] = df.index.month.values.astype(int)
+    df['year'] = df.index.year.values.astype(int)
+    df['dayofyear'] = df.index.dayofyear.values.astype(int)
+    df['Quarter'] = df.index.quarter.values.astype(int)
+    # Use a safe way to get week of year without NAs
+    df['weekofyear'] = df.index.to_series().dt.isocalendar().week.values.astype(int)
     df['is_weekend'] = df.index.dayofweek.isin([5, 6]).astype(int)
 
     # Cyclical Features
@@ -50,6 +54,24 @@ def load_and_preprocess_data(filepath='electricitydemand.csv'):
     df = df.dropna()
 
     return df
+
+def get_season(month):
+    """Maps month to season."""
+    if month in [12, 1, 2]:
+        return 'Winter'
+    elif month in [3, 4, 5]:
+        return 'Spring' # Or Summer depending on region, prompt used Summer/Winter/Spring/Autumn
+    elif month in [6, 7, 8]:
+        return 'Summer'
+    else:
+        return 'Autumn'
+
+def calculate_normalized_error(actual, predicted):
+    """Calculates error normalized to 0-1 range based on the range of actual values."""
+    range_val = actual.max() - actual.min()
+    if range_val == 0:
+        return np.zeros_like(actual)
+    return np.abs(actual - predicted) / range_val
 
 def get_split_data(df):
     # Features and Target
