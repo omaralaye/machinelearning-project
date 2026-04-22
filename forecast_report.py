@@ -203,7 +203,7 @@ if __name__ == "__main__":
     # Load model and data to demonstrate
     try:
         model = joblib.load('xgb_electricity_demand_model.pkl')
-        df, X_train, X_test, Y_train, Y_test = edf.get_data_for_modeling()
+        df, X_train, X_val, X_test, Y_train, Y_val, Y_test = edf.get_data_for_modeling()
         predictions = model.predict(X_test)
 
         full_report = generate_report(Y_test, predictions, Y_test.index, model, X_train, Y_train)
