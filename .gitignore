@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+demand_forecast_graph.png
+forecasting_report.txt
+report_test.log
+output_predictions.csv
