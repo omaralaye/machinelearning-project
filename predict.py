@@ -5,8 +5,9 @@ import holidays
 from datetime import timedelta
 import sys
 import edf
+import tensorflow as tf
 
-def prepare_input_features(timestamp, temperature, humidity, historical_df):
+def prepare_input_features(timestamp, temperature, humidity, historical_df, feature_names):
     """
     Prepares the feature vector for a given timestamp and exogenous variables,
     using historical data for lags and rolling statistics.
@@ -14,10 +15,8 @@ def prepare_input_features(timestamp, temperature, humidity, historical_df):
     try:
         ts = pd.to_datetime(timestamp)
     except:
-        # Try custom format if standard fails
         ts = pd.to_datetime(timestamp, format='%d-%b-%y %H:%M')
 
-    # Base features
     data = {
         'hour': ts.hour,
         'dayofweek': ts.dayofweek,
@@ -31,47 +30,34 @@ def prepare_input_features(timestamp, temperature, humidity, historical_df):
         'is_weekend': 1 if ts.dayofweek >= 5 else 0
     }
 
-    # Cyclical Features
     data['hour_sin'] = np.sin(2 * np.pi * data['hour'] / 24)
     data['hour_cos'] = np.cos(2 * np.pi * data['hour'] / 24)
     data['month_sin'] = np.sin(2 * np.pi * (data['month'] - 1) / 12)
     data['month_cos'] = np.cos(2 * np.pi * (data['month'] - 1) / 12)
 
-    # Holiday Feature
     in_holidays = holidays.IN(years=[ts.year])
     data['is_holiday'] = 1 if ts.date() in in_holidays else 0
-
-    # Lagged and Rolling Features from history
-    # We need Demand values for these.
-    # Demand_lag_24hr: Demand at ts - 24h
-    # Demand_lag_168hr: Demand at ts - 168h (1 week)
-    # demand_rolling_mean_24hr: mean Demand from (ts - 24h) to (ts - 1h)
 
     target_24h = ts - timedelta(hours=24)
     target_168h = ts - timedelta(hours=168)
 
-    # Look up in historical_df
     try:
         lag_24 = historical_df.loc[target_24h, 'Demand']
         if isinstance(lag_24, pd.Series): lag_24 = lag_24.iloc[0]
     except KeyError:
-        print(f"Warning: No historical data for 24h lag at {target_24h}. Using mean.")
         lag_24 = historical_df['Demand'].mean()
 
     try:
         lag_168 = historical_df.loc[target_168h, 'Demand']
         if isinstance(lag_168, pd.Series): lag_168 = lag_168.iloc[0]
     except KeyError:
-        print(f"Warning: No historical data for 168h lag at {target_168h}. Using mean.")
         lag_168 = historical_df['Demand'].mean()
 
-    # Rolling stats for last 24 hours
     start_rolling = ts - timedelta(hours=24)
     end_rolling = ts - timedelta(hours=1)
     last_24h_data = historical_df.loc[start_rolling:end_rolling, 'Demand']
 
-    if len(last_24h_data) < 12: # Heuristic: if we have less than half the expected data points
-        print(f"Warning: Insufficient data for rolling statistics at {ts}. Using global stats.")
+    if len(last_24h_data) < 12:
         rolling_mean = historical_df['Demand'].mean()
         rolling_std = historical_df['Demand'].std()
     else:
@@ -83,22 +69,67 @@ def prepare_input_features(timestamp, temperature, humidity, historical_df):
     data['demand_rolling_mean_24hr'] = rolling_mean
     data['demand_rolling_std_24hr'] = rolling_std
 
-    return pd.DataFrame([data])
+    df = pd.DataFrame([data])
+    return df[feature_names]
+
+def prepare_lstm_sequence(timestamp, temperature, humidity, historical_df, lstm_features, scaler):
+    """
+    Prepares a 24-hour sequence for LSTM prediction.
+    """
+    ts = pd.to_datetime(timestamp)
+    sequence_data = []
+
+    # We need 24 hours of data leading up to the target timestamp
+    for i in range(24, 0, -1):
+        curr_ts = ts - timedelta(hours=i)
+
+        # For the target timestamp's exogenous variables, we use inputs.
+        # But for the sequence, we either need historical exogenous or assume they are available.
+        # Since we only have historical 'Demand', 'Temperature', 'Humidity' in the CSV,
+        # let's try to get them from historical_df.
+
+        try:
+            row = historical_df.loc[curr_ts]
+            if isinstance(row, pd.DataFrame): row = row.iloc[0]
+            curr_temp = row['Temperature']
+            curr_hum = row['Humidity']
+        except KeyError:
+            # Fallback to current input if history missing
+            curr_temp = temperature
+            curr_hum = humidity
+
+        features_df = prepare_input_features(curr_ts, curr_temp, curr_hum, historical_df, lstm_features)
+
+        # Get Demand for this historical point to include in scaling
+        try:
+            curr_demand = historical_df.loc[curr_ts, 'Demand']
+            if isinstance(curr_demand, pd.Series): curr_demand = curr_demand.iloc[0]
+        except KeyError:
+            curr_demand = historical_df['Demand'].mean()
+
+        # Combine features and demand for scaling (scaler expects all features + demand)
+        combined_row = features_df.iloc[0].tolist() + [curr_demand]
+        scaled_row = scaler.transform([combined_row])[0]
+
+        # LSTM input sequence is only the features (last column is target)
+        sequence_data.append(scaled_row[:-1])
+
+    return np.array([sequence_data])
 
 def main():
-    print("--- Electricity Demand Forecast ---")
+    print("--- Electricity Demand Forecast (Multi-Model) ---")
 
-    # Load model and history
+    # Load resources
     try:
-        model = joblib.load('xgb_electricity_demand_model.pkl')
+        xgb_model = joblib.load('xgb_electricity_demand_model.pkl')
+        lstm_model = tf.keras.models.load_model('lstm_model.keras')
+        scaler = joblib.load('scaler.pkl')
+        lstm_features = joblib.load('lstm_features.pkl')
+
         historical_df = pd.read_csv('electricitydemand.csv')
-        # We need to combine date and hour to create proper timestamp for index
-        # Looking at csv format: Timestamp,hour,... where Timestamp is 01-Jan-20
         historical_df['full_ts'] = pd.to_datetime(historical_df['Timestamp'], format='%d-%b-%y') + \
                                   pd.to_timedelta(historical_df['hour'], unit='h')
-        historical_df = historical_df.dropna(subset=['full_ts'])
-        historical_df.set_index('full_ts', inplace=True)
-        historical_df.sort_index(inplace=True)
+        historical_df = historical_df.dropna(subset=['full_ts']).set_index('full_ts').sort_index()
     except Exception as e:
         print(f"Error loading resources: {e}")
         return
@@ -110,50 +141,45 @@ def main():
         temp_input = float(input("Temperature (Celsius): "))
         hum_input = float(input("Humidity (%): "))
     except ValueError:
-        print("Invalid input. Please enter numerical values for temperature and humidity.")
+        print("Invalid input.")
         return
 
-    # Prepare features
-    features_df = prepare_input_features(ts_input, temp_input, hum_input, historical_df)
+    # XGBoost Prediction
+    xgb_features = prepare_input_features(ts_input, temp_input, hum_input, historical_df, xgb_model.feature_names_in_)
+    xgb_pred = xgb_model.predict(xgb_features)[0]
 
-    # Ensure feature order matches model
-    features_df = features_df[model.feature_names_in_]
+    # LSTM Prediction
+    lstm_seq = prepare_lstm_sequence(ts_input, temp_input, hum_input, historical_df, lstm_features, scaler)
+    lstm_pred_scaled = lstm_model.predict(lstm_seq, verbose=0)[0][0]
 
-    # Predict
-    prediction = model.predict(features_df)[0]
+    # Inverse transform LSTM prediction
+    dummy = np.zeros((1, len(lstm_features) + 1))
+    dummy[0, -1] = lstm_pred_scaled
+    lstm_pred = scaler.inverse_transform(dummy)[0, -1]
 
-    print(f"\nForecasted Electricity Demand: {prediction:.2f} MW")
+    print(f"\nForecast Results:")
+    print(f"XGBoost Forecast: {xgb_pred:.2f} MW")
+    print(f"LSTM Forecast:    {lstm_pred:.2f} MW")
+    print(f"Average Forecast: {(xgb_pred + lstm_pred)/2:.2f} MW")
 
-    # Optional Actual Input
-    actual_input = input("\nDo you have the actual demand value for this timestamp? (Enter value or press Enter to skip): ")
+    # Comparison logic
+    actual_input = input("\nActual demand value (optional, press Enter to skip): ")
     if actual_input.strip():
         try:
             actual_val = float(actual_input)
-            error = actual_val - prediction
-            # Using same range-normalization as in edf.py
-            actual_range = historical_df['Demand'].max() - historical_df['Demand'].min()
-            norm_error = edf.calculate_normalized_error(actual_val, prediction, range_val=actual_range)
+            hist_range = historical_df['Demand'].max() - historical_df['Demand'].min()
 
-            print(f"\n--- Comparison Report ---")
-            print(f"Actual Demand:     {actual_val:.2f} MW")
-            print(f"Forecasted Demand: {prediction:.2f} MW")
-            print(f"Error:             {error:.2f} MW")
-            print(f"Normalized Error (0-1): {norm_error:.4f}")
+            print(f"\n--- Performance Comparison ---")
+            for name, pred in [("XGBoost", xgb_pred), ("LSTM", lstm_pred)]:
+                error = actual_val - pred
+                norm_err = edf.calculate_normalized_error(actual_val, pred, range_val=hist_range)
+                print(f"{name:8} | Pred: {pred:7.2f} | Error: {error:7.2f} | Norm Error: {norm_err:.4f}")
 
-            # Category comparison
-            thresholds = historical_df['Demand'].quantile([0.333, 0.666]).values
-            def get_cat(v):
-                if v <= thresholds[0]: return 'Low'
-                if v <= thresholds[1]: return 'Medium'
-                return 'High'
-
-            print(f"Actual Category:   {get_cat(actual_val)}")
-            print(f"Forecast Category: {get_cat(prediction)}")
-
-            if np.abs(error/actual_val) > 0.10:
-                print("RED FLAG - ANOMALY FLAG: actual vs. forecast deviation exceeds 10%")
+            # Anomaly check
+            if abs((actual_val - xgb_pred)/actual_val) > 0.10 or abs((actual_val - lstm_pred)/actual_val) > 0.10:
+                print("\nRED FLAG - ANOMALY DETECTED: Significant deviation in one or both models.")
         except ValueError:
-            print("Invalid actual value entered. Skipping comparison.")
+            pass
 
 if __name__ == "__main__":
     main()
