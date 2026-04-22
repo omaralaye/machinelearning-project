@@ -33,8 +33,11 @@ Data preprocessing is crucial for time-series forecasting. The following steps a
 
 ## Models
 
+The project utilizes two distinct architectures. The **XGBoost model is integrated into the Python utility scripts** for production-like use via serialization, while the **LSTM model is available for comparative analysis** within its specialized notebook.
+
 ### 1. XGBoost (Extreme Gradient Boosting)
 - **Type**: Gradient Boosted Decision Trees.
+- **Serialization**: The model is exported from `XGBOOST.ipynb` as `xgb_electricity_demand_model.pkl` using the `joblib` library. This allows scripts like `predict.py` and `batch_predict.py` to load the trained model object directly without retraining.
 - **Approach**: Uses the full set of engineered features (time-based, cyclical, lagged, rolling) to predict demand.
 - **Configuration**: Trained with 1000 estimators, a learning rate of 0.01, and early stopping to prevent overfitting.
 - **Performance**: High accuracy with an R² score of approximately 0.976.
@@ -76,12 +79,16 @@ pip install -r requirements.txt
 
 For detailed instructions on how to use the forecasting model for interactive predictions, batch processing, and performance reporting, please refer to the [Usage Guide](USAGE.md).
 
-### Quick Start: Interactive Prediction
+### Quick Start: Interactive Prediction (XGBoost)
 ```bash
 python predict.py
 ```
 
-### Quick Start: Batch Prediction
+### Quick Start: Batch Prediction (XGBoost)
 ```bash
 python batch_predict.py input_data.csv output_results.csv
 ```
+
+> **Model-Script Connection**:
+> * **XGBoost**: Connected to `.py` scripts via `joblib.load('xgb_electricity_demand_model.pkl')`. The features are synchronized using the shared `edf.py` module.
+> * **LSTM**: Connected to the project data via `edf.py`, but inference is currently performed within the `LSTM.ipynb` notebook to accommodate its specific sequence-based data requirements (24-hour sliding windows and standardization).
