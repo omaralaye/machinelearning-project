@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
 from statsmodels.tsa.stattools import adfuller, acf, pacf
 from statsmodels.stats.diagnostic import acorr_ljungbox
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -61,6 +61,28 @@ def generate_report(actual, predicted, timestamps, model=None, X_train=None, Y_t
     report.append(f"RMSE  : {rmse:.2f} MW")
     report.append(f"MAPE  : {mape:.2f} %")
     report.append(f"R²    : {r2:.4f}")
+
+    # Confusion Matrix (Discretized)
+    report.append("\nConfusion Matrix (Low/Medium/High Demand):")
+    # Discretization thresholds from original data if possible, else test set
+    try:
+        hist_df = pd.read_csv('electricitydemand.csv')
+        thresholds = hist_df['Demand'].quantile([0.333, 0.666]).values
+    except:
+        thresholds = actual.quantile([0.333, 0.666]).values
+
+    def discretize(val):
+        if val <= thresholds[0]: return 'Low'
+        if val <= thresholds[1]: return 'Medium'
+        return 'High'
+
+    y_true_cat = actual.apply(discretize)
+    y_pred_cat = predicted.apply(discretize)
+    labels = ['Low', 'Medium', 'High']
+    cm = confusion_matrix(y_true_cat, y_pred_cat, labels=labels)
+
+    cm_df = pd.DataFrame(cm, index=[f"Actual {l}" for l in labels], columns=[f"Pred {l}" for l in labels])
+    report.append(cm_df.to_string())
 
     interpretation = "Strong forecast accuracy" if mape < 5 else "Acceptable forecast accuracy" if mape < 10 else "Low forecast accuracy"
     report.append(f"Interpretation: A MAPE of {mape:.2f}% indicates {interpretation}, well within the acceptable threshold of <5% for energy systems." if mape < 5 else f"Interpretation: A MAPE of {mape:.2f}% indicates {interpretation}.")

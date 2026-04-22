@@ -3,7 +3,7 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix
 import holidays
 import os
 import sys
@@ -52,9 +52,22 @@ def edf_preprocess(df):
 
 def generate_plots(df):
     """
-    Generates forecast comparison plot and metrics diagram.
+    Generates forecast comparison plot, metrics diagram, and confusion matrix heatmap.
     """
     plt.style.use('seaborn-v0_8-darkgrid')
+
+    # Load historical thresholds for discretization (from original dataset)
+    try:
+        hist_df = pd.read_csv('electricitydemand.csv')
+        thresholds = hist_df['Demand'].quantile([0.333, 0.666]).values
+    except:
+        # Fallback to current data if history not found
+        thresholds = df['Actual Demand'].quantile([0.333, 0.666]).values if 'Actual Demand' in df.columns else [4400, 5600]
+
+    def discretize(val):
+        if val <= thresholds[0]: return 'Low'
+        if val <= thresholds[1]: return 'Medium'
+        return 'High'
 
     if 'Actual Demand' not in df.columns or df['Actual Demand'].isnull().all():
         # Just plot forecast
@@ -128,6 +141,21 @@ def generate_plots(df):
     plt.tight_layout()
     plt.savefig('metrics_diagram.png')
     print("Metrics diagram saved to metrics_diagram.png")
+
+    # Confusion Matrix
+    y_true_cat = df['Actual Demand'].apply(discretize)
+    y_pred_cat = df['Forecast Demand'].apply(discretize)
+    labels = ['Low', 'Medium', 'High']
+    cm = confusion_matrix(y_true_cat, y_pred_cat, labels=labels)
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+    plt.title('Demand Confusion Matrix (Discretized)', fontsize=16)
+    plt.xlabel('Predicted Category', fontsize=12)
+    plt.ylabel('Actual Category', fontsize=12)
+    plt.tight_layout()
+    plt.savefig('confusion_matrix.png')
+    print("Confusion matrix saved to confusion_matrix.png")
 
 def main(input_csv, output_csv='predictions.csv'):
     # Load model
