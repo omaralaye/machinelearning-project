@@ -37,7 +37,7 @@ Probabilistic Summary: There is a 90% chance demand will fall between 5524.07 an
 MAE   : 120.48 MW
 RMSE  : 171.09 MW
 MAPE  : 2.52 %
-RÂ²    : 0.9853
+R²    : 0.9853
 
 Confusion Matrix (Low/Medium/High Demand):
                Pred Low  Pred Medium  Pred High
@@ -74,9 +74,9 @@ MAPE Breakdown by Time of Day:
   * Off-peak: 2.70%
 
 Baseline Comparison:
-  * NaÃ¯ve model (yesterday = today) MAPE: 6.19%
+  * Naïve model (yesterday = today) MAPE: 6.19%
   * Current model MAPE: 2.52%
-Model outperforms NaÃ¯ve baseline
+Model outperforms Naïve baseline
 
 === 7. OPERATIONAL ALERTS & RECOMMENDATIONS ===
 RED FLAG - PEAK ALERT: Forecasted demand exceeds 5000 MW (Max: 8348.99 MW)
