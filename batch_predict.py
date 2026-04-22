@@ -7,6 +7,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, c
 import holidays
 import os
 import sys
+import edf
 
 def edf_preprocess(df):
     """
@@ -223,6 +224,13 @@ def main(input_csv, output_csv='predictions.csv'):
     if 'Demand' in predict_df.columns:
         predict_df['Actual Demand'] = predict_df['Demand']
         predict_df['Error'] = predict_df['Actual Demand'] - predict_df['Forecast Demand']
+        # Calculate range from history for normalization
+        hist_range = hist_df['Demand'].max() - hist_df['Demand'].min()
+        predict_df['Normalized Error (0-1)'] = edf.calculate_normalized_error(
+            predict_df['Actual Demand'],
+            predict_df['Forecast Demand'],
+            range_val=hist_range
+        )
 
     # Prepare Output CSV
     output_cols = []
@@ -231,6 +239,7 @@ def main(input_csv, output_csv='predictions.csv'):
     output_cols.append('Forecast Demand')
     if 'Actual Demand' in predict_df.columns:
         output_cols.append('Error')
+        output_cols.append('Normalized Error (0-1)')
 
     predict_df[output_cols].to_csv(output_csv)
     print(f"Predictions saved to {output_csv}")
