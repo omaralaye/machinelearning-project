@@ -21,7 +21,7 @@ def main():
         return
 
     # 2. Get data
-    df, X_train, X_test, Y_train, Y_test = edf.get_data_for_modeling()
+    df, X_train, X_val, X_test, Y_train, Y_val, Y_test = edf.get_data_for_modeling()
 
     # 3. XGBoost Predictions
     xgb_preds = xgb_model.predict(X_test)

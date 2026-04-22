@@ -9,7 +9,7 @@ import os
 
 def train_and_save_lstm():
     print("Loading and preprocessing data...")
-    original_df, _, _, _, _ = edf.get_data_for_modeling()
+    original_df, X_train_raw, X_val_raw, X_test_raw, Y_train_raw, Y_val_raw, Y_test_raw = edf.get_data_for_modeling()
 
     # Prepare the data for LSTM model (Multivariate)
     features = original_df.columns.tolist()
@@ -23,10 +23,13 @@ def train_and_save_lstm():
     scaler = StandardScaler()
     scaled_data = scaler.fit_transform(data)
 
-    train_data = scaled_data[0:training_data_len, :]
+    train_data = scaled_data[0:len(X_train_raw), :]
+    val_data = scaled_data[len(X_train_raw):len(X_train_raw)+len(X_val_raw), :]
 
     X_train = []
     Y_train = []
+    X_val = []
+    Y_val = []
 
     # Create a sliding window of 24 hours to predict the next hour's demand
     window_size = 24
@@ -34,9 +37,17 @@ def train_and_save_lstm():
         X_train.append(train_data[i-window_size:i, :-1]) # All columns except last (target)
         Y_train.append(train_data[i, -1])     # Last column (target)
 
+    # For validation, we need the last 24 hours of training data to predict the first hour of validation
+    combined_train_val = np.vstack([train_data[-window_size:], val_data])
+    for i in range(window_size, len(combined_train_val)):
+        X_val.append(combined_train_val[i-window_size:i, :-1])
+        Y_val.append(combined_train_val[i, -1])
+
     X_train, Y_train = np.array(X_train), np.array(Y_train)
+    X_val, Y_val = np.array(X_val), np.array(Y_val)
 
     print(f"X_train shape: {X_train.shape}")
+    print(f"X_val shape: {X_val.shape}")
 
     # Building the LSTM model
     model = keras.models.Sequential([
@@ -57,7 +68,7 @@ def train_and_save_lstm():
     model.compile(optimizer='adam', loss='mae', metrics=[keras.metrics.RootMeanSquaredError()])
 
     print("Starting training...")
-    model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_split=0.1, callbacks=[early_stop])
+    model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_val, Y_val), callbacks=[early_stop])
 
     # Save the model and the scaler
     model.save('lstm_model.keras')

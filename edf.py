@@ -84,23 +84,30 @@ def calculate_normalized_error(actual, predicted, range_val=None):
     # Ensure it's in (0-1) range as requested
     return np.clip(norm_err, 0, 1)
 
-def get_split_data(df):
+def get_split_data(df, val_ratio=0.1, test_ratio=0.2):
     # Features and Target
     X = df.drop(columns=['Demand'])
     Y = df['Demand']
 
     # Split the data (Shuffle=False for time series)
-    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, shuffle=False)
+    # First split off the test set
+    X_train_val, X_test, Y_train_val, Y_test = train_test_split(X, Y, test_size=test_ratio, shuffle=False)
 
-    return X_train, X_test, Y_train, Y_test
+    # Then split the remaining into train and validation
+    val_size = val_ratio / (1 - test_ratio)
+    X_train, X_val, Y_train, Y_val = train_test_split(X_train_val, Y_train_val, test_size=val_size, shuffle=False)
 
-def get_data_for_modeling():
+    return X_train, X_val, X_test, Y_train, Y_val, Y_test
+
+def get_data_for_modeling(val_ratio=0.1, test_ratio=0.2):
     df = load_and_preprocess_data()
-    X_train, X_test, Y_train, Y_test = get_split_data(df)
-    return df, X_train, X_test, Y_train, Y_test
+    X_train, X_val, X_test, Y_train, Y_val, Y_test = get_split_data(df, val_ratio, test_ratio)
+    return df, X_train, X_val, X_test, Y_train, Y_val, Y_test
 
 if __name__ == "__main__":
-    df, X_train, X_test, Y_train, Y_test = get_data_for_modeling()
+    df, X_train, X_val, X_test, Y_train, Y_val, Y_test = get_data_for_modeling()
     print("Data Preprocessing Complete.")
     print(f"Dataset shape: {df.shape}")
     print(f"X_train shape: {X_train.shape}")
+    print(f"X_val shape: {X_val.shape}")
+    print(f"X_test shape: {X_test.shape}")
