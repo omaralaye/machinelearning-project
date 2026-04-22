@@ -66,12 +66,23 @@ def get_season(month):
     else:
         return 'Autumn'
 
-def calculate_normalized_error(actual, predicted):
-    """Calculates error normalized to 0-1 range based on the range of actual values."""
-    range_val = actual.max() - actual.min()
+def calculate_normalized_error(actual, predicted, range_val=None):
+    """
+    Calculates error normalized to 0-1 range.
+    If range_val is not provided, it uses the range of the actual values provided.
+    """
+    if range_val is None:
+        range_val = actual.max() - actual.min()
+
     if range_val == 0:
-        return np.zeros_like(actual)
-    return np.abs(actual - predicted) / range_val
+        # Fallback to mean if range is 0 (e.g., single point)
+        denom = actual.mean() if actual.mean() != 0 else 1
+        norm_err = np.abs(actual - predicted) / denom
+    else:
+        norm_err = np.abs(actual - predicted) / range_val
+
+    # Ensure it's in (0-1) range as requested
+    return np.clip(norm_err, 0, 1)
 
 def get_split_data(df):
     # Features and Target

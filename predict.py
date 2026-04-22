@@ -4,6 +4,7 @@ import joblib
 import holidays
 from datetime import timedelta
 import sys
+import edf
 
 def prepare_input_features(timestamp, temperature, humidity, historical_df):
     """
@@ -131,13 +132,23 @@ def main():
             error = actual_val - prediction
             # Using same range-normalization as in edf.py
             actual_range = historical_df['Demand'].max() - historical_df['Demand'].min()
-            norm_error = np.abs(error) / actual_range if actual_range != 0 else 0
+            norm_error = edf.calculate_normalized_error(actual_val, prediction, range_val=actual_range)
 
             print(f"\n--- Comparison Report ---")
             print(f"Actual Demand:     {actual_val:.2f} MW")
             print(f"Forecasted Demand: {prediction:.2f} MW")
             print(f"Error:             {error:.2f} MW")
             print(f"Normalized Error (0-1): {norm_error:.4f}")
+
+            # Category comparison
+            thresholds = historical_df['Demand'].quantile([0.333, 0.666]).values
+            def get_cat(v):
+                if v <= thresholds[0]: return 'Low'
+                if v <= thresholds[1]: return 'Medium'
+                return 'High'
+
+            print(f"Actual Category:   {get_cat(actual_val)}")
+            print(f"Forecast Category: {get_cat(prediction)}")
 
             if np.abs(error/actual_val) > 0.10:
                 print("RED FLAG - ANOMALY FLAG: actual vs. forecast deviation exceeds 10%")
