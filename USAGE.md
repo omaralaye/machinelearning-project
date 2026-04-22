@@ -87,7 +87,28 @@ If you want to check if the model is over-fitting or under-fitting, use `fit_man
 
 ---
 
-## 6. Training and Experimentation (Jupyter Notebooks)
+## 6. Visualizing Model Comparison (`plot_results.py`)
+
+Use the `plot_results.py` script to generate a visual comparison between the actual electricity demand and the forecasts from both the XGBoost and LSTM models.
+
+### Steps:
+1. Run the script:
+   ```bash
+   python plot_results.py
+   ```
+2. The script will:
+   - Load the test dataset (the last 20% of the data).
+   - Generate predictions using both XGBoost and LSTM.
+   - Save a comparison plot as `demand_forecast_graph.png`.
+
+The plot shows:
+- **Actual Demand**: The ground truth from the test set.
+- **XGBoost Prediction**: The forecasted demand with a 95% confidence interval shaded area.
+- **LSTM Prediction**: The forecasted demand from the LSTM model.
+
+---
+
+## 7. Training and Experimentation (Jupyter Notebooks)
 
 If you wish to retrain the models or explore the data further:
 
