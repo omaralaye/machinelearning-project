@@ -8,16 +8,14 @@ import holidays
 import os
 import sys
 import edf
+import tensorflow as tf
 
 def edf_preprocess(df):
     """
     Applies the same preprocessing as in edf.py but on a provided DataFrame.
     """
     df = df.copy()
-    # Sort by index to ensure time-based operations work correctly
     df = df.sort_index()
-
-    # Fill remaining missing values if any (simple forward fill for time series)
     df = df.ffill()
 
     # Feature Engineering
@@ -53,204 +51,147 @@ def edf_preprocess(df):
 
 def generate_plots(df):
     """
-    Generates forecast comparison plot, metrics diagram, and confusion matrix heatmap.
+    Generates comparison plots for both models.
     """
     plt.style.use('seaborn-v0_8-darkgrid')
 
-    # Load historical thresholds for discretization (from original dataset)
     try:
         hist_df = pd.read_csv('electricitydemand.csv')
         thresholds = hist_df['Demand'].quantile([0.333, 0.666]).values
     except:
-        # Fallback to current data if history not found
         thresholds = df['Actual Demand'].quantile([0.333, 0.666]).values if 'Actual Demand' in df.columns else [4400, 5600]
 
-    def discretize(val):
-        if val <= thresholds[0]: return 'Low'
-        if val <= thresholds[1]: return 'Medium'
-        return 'High'
-
-    if 'Actual Demand' not in df.columns or df['Actual Demand'].isnull().all():
-        # Just plot forecast
+    if 'Actual Demand' in df.columns:
+        # Comparison plot
         plt.figure(figsize=(15, 7))
-        plt.plot(df.index, df['Forecast Demand'], label='Forecasted Demand', color='red', linewidth=2)
-        plt.title('Electricity Demand Forecast', fontsize=16)
-        plt.xlabel('Timestamp', fontsize=12)
-        plt.ylabel('Demand (MW)', fontsize=12)
+        plt.plot(df.index, df['Actual Demand'], label='Actual Demand', color='black', alpha=0.6, linewidth=2)
+        plt.plot(df.index, df['XGB Forecast'], label='XGBoost', color='blue', linestyle='--')
+        plt.plot(df.index, df['LSTM Forecast'], label='LSTM', color='red', linestyle=':')
+
+        plt.title('Multi-Model Electricity Demand Forecast Comparison', fontsize=16)
+        plt.xlabel('Timestamp')
+        plt.ylabel('Demand (MW)')
         plt.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
-        plt.savefig('forecast_plot.png')
-        print("Forecast plot saved to forecast_plot.png")
-        return
+        plt.savefig('multi_model_comparison.png')
+        print("Comparison plot saved to multi_model_comparison.png")
 
-    # Actual vs Forecast
-    plt.figure(figsize=(15, 7))
-    plt.plot(df.index, df['Actual Demand'], label='Actual Demand', color='blue', alpha=0.7)
-    plt.plot(df.index, df['Forecast Demand'], label='Forecasted Demand', color='red', linestyle='--', linewidth=2)
+        # Metrics for both
+        metrics = []
+        for model_name in ['XGB', 'LSTM']:
+            pred_col = f'{model_name} Forecast'
+            mae = mean_absolute_error(df['Actual Demand'], df[pred_col])
+            rmse = np.sqrt(mean_squared_error(df['Actual Demand'], df[pred_col]))
+            mape = np.mean(np.abs((df['Actual Demand'] - df[pred_col]) / df['Actual Demand'])) * 100
+            r2 = r2_score(df['Actual Demand'], df[pred_col])
+            metrics.append([model_name, f"{mae:.2f}", f"{rmse:.2f}", f"{mape:.2f}%", f"{r2:.4f}"])
 
-    # Calculate confidence interval (approximate using 95% of residuals if available)
-    error = df['Actual Demand'] - df['Forecast Demand']
-    std_error = error.std()
-    plt.fill_between(df.index,
-                     df['Forecast Demand'] - 1.96 * std_error,
-                     df['Forecast Demand'] + 1.96 * std_error,
-                     color='pink', alpha=0.3, label='95% Confidence Interval')
-
-    plt.title('Actual vs Forecasted Electricity Demand', fontsize=16)
-    plt.xlabel('Timestamp', fontsize=12)
-    plt.ylabel('Demand (MW)', fontsize=12)
-    plt.legend()
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig('forecast_vs_actual.png')
-    print("Comparison plot saved to forecast_vs_actual.png")
-
-    # Metrics Diagram
-    mae = mean_absolute_error(df['Actual Demand'], df['Forecast Demand'])
-    rmse = np.sqrt(mean_squared_error(df['Actual Demand'], df['Forecast Demand']))
-    mape = np.mean(np.abs((df['Actual Demand'] - df['Forecast Demand']) / df['Actual Demand'])) * 100
-    r2 = r2_score(df['Actual Demand'], df['Forecast Demand'])
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.axis('off')
-
-    metric_names = ['Mean Absolute Error (MAE)', 'Root Mean Squared Error (RMSE)', 'Mean Absolute Percentage Error (MAPE)', 'R² Score (Accuracy)']
-    metric_values = [f"{mae:.2f} MW", f"{rmse:.2f} MW", f"{mape:.2f}%", f"{r2:.4f}"]
-
-    table_data = []
-    for n, v in zip(metric_names, metric_values):
-        table_data.append([n, v])
-
-    table = ax.table(cellText=table_data,
-                     colLabels=['Metric', 'Value'],
-                     loc='center', cellLoc='left',
-                     colColours=['#f2f2f2', '#f2f2f2'])
-
-    table.auto_set_font_size(False)
-    table.set_fontsize(14)
-    table.scale(1.2, 2.5)
-
-    # Color coding based on MAPE
-    status = "EXCELLENT" if mape < 5 else "GOOD" if mape < 10 else "FAIR" if mape < 20 else "POOR"
-    color = "green" if mape < 10 else "orange" if mape < 20 else "red"
-
-    plt.text(0.5, 0.95, f'Forecast Performance: {status}',
-             horizontalalignment='center', fontsize=18, fontweight='bold', color=color, transform=ax.transAxes)
-
-    plt.title('Summary of Prediction Metrics', fontsize=16, pad=30)
-    plt.tight_layout()
-    plt.savefig('metrics_diagram.png')
-    print("Metrics diagram saved to metrics_diagram.png")
-
-    # Confusion Matrix
-    y_true_cat = df['Actual Demand'].apply(discretize)
-    y_pred_cat = df['Forecast Demand'].apply(discretize)
-    labels = ['Low', 'Medium', 'High']
-    cm = confusion_matrix(y_true_cat, y_pred_cat, labels=labels)
-
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
-    plt.title('Demand Confusion Matrix (Discretized)', fontsize=16)
-    plt.xlabel('Predicted Category', fontsize=12)
-    plt.ylabel('Actual Category', fontsize=12)
-    plt.tight_layout()
-    plt.savefig('confusion_matrix.png')
-    print("Confusion matrix saved to confusion_matrix.png")
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.axis('off')
+        table = ax.table(cellText=metrics,
+                         colLabels=['Model', 'MAE', 'RMSE', 'MAPE', 'R² Score'],
+                         loc='center', cellLoc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(12)
+        table.scale(1.2, 2)
+        plt.title('Model Performance Comparison', fontsize=14)
+        plt.savefig('batch_metrics.png')
+        print("Metrics table saved to batch_metrics.png")
+    else:
+        # Forecast only
+        plt.figure(figsize=(15, 7))
+        plt.plot(df.index, df['XGB Forecast'], label='XGBoost', color='blue')
+        plt.plot(df.index, df['LSTM Forecast'], label='LSTM', color='red')
+        plt.title('Electricity Demand Forecasts')
+        plt.legend()
+        plt.savefig('forecast_only.png')
 
 def main(input_csv, output_csv='predictions.csv'):
-    # Load model
+    # Load models
     try:
-        model = joblib.load('xgb_electricity_demand_model.pkl')
-        print("Model loaded successfully.")
+        xgb_model = joblib.load('xgb_electricity_demand_model.pkl')
+        lstm_model = tf.keras.models.load_model('lstm_model.keras')
+        scaler = joblib.load('scaler.pkl')
+        lstm_features_list = joblib.load('lstm_features.pkl')
+        print("Models and resources loaded successfully.")
     except Exception as e:
-        print(f"Error loading model: {e}")
+        print(f"Error loading models: {e}")
         return
 
-    # Load input data
+    # Load data
     try:
         input_df = pd.read_csv(input_csv)
-        print(f"Loaded input data from {input_csv} ({len(input_df)} rows).")
-        # Standardize timestamp
         input_df['full_ts'] = pd.to_datetime(input_df['Timestamp'], format='%d-%b-%y', errors='coerce') + \
-                          pd.to_timedelta(input_df['hour'], unit='h', errors='coerce')
+                              pd.to_timedelta(input_df['hour'], unit='h', errors='coerce')
         if input_df['full_ts'].isnull().any():
-            # Try alternate format
             input_df['full_ts'] = pd.to_datetime(input_df['Timestamp'], errors='coerce')
+        input_df = input_df.dropna(subset=['full_ts']).set_index('full_ts').sort_index()
 
-        input_df = input_df.dropna(subset=['full_ts']).set_index('full_ts')
-        input_df = input_df.sort_index()
-    except Exception as e:
-        print(f"Error processing input CSV: {e}")
-        return
-
-    # Load historical data to calculate lags/rolling
-    try:
         hist_df = pd.read_csv('electricitydemand.csv')
         hist_df['full_ts'] = pd.to_datetime(hist_df['Timestamp'], format='%d-%b-%y', errors='coerce') + \
-                          pd.to_timedelta(hist_df['hour'], unit='h', errors='coerce')
-        hist_df = hist_df.dropna(subset=['full_ts']).set_index('full_ts')
-        hist_df = hist_df.sort_index()
+                             pd.to_timedelta(hist_df['hour'], unit='h', errors='coerce')
+        hist_df = hist_df.dropna(subset=['full_ts']).set_index('full_ts').sort_index()
     except Exception as e:
-        print(f"Error loading historical data: {e}")
+        print(f"Error loading data: {e}")
         return
 
-    # Combine history and input to ensure lags are correct
-    # If input data is far in the future, we might have gaps, but ffill() handles it somewhat
     combined_df = pd.concat([hist_df, input_df])
-    # Remove duplicates if any
     combined_df = combined_df[~combined_df.index.duplicated(keep='last')].sort_index()
-
-    # Preprocess
     processed_df = edf_preprocess(combined_df)
 
-    # Extract only the rows that were in input_df for prediction
+    # Prediction set
     predict_df = processed_df.loc[input_df.index].copy()
 
-    # Features
-    try:
-        X = predict_df[model.feature_names_in_]
-    except KeyError as e:
-        print(f"Error: Missing required features in processed data: {e}")
-        # Identify missing features
-        missing = [f for f in model.feature_names_in_ if f not in predict_df.columns]
-        print(f"Missing: {missing}")
-        return
+    # XGBoost
+    predict_df['XGB Forecast'] = xgb_model.predict(predict_df[xgb_model.feature_names_in_])
 
-    # Predict
-    predict_df['Forecast Demand'] = model.predict(X)
+    # Optimized LSTM Prediction
+    print("Preparing data for LSTM (vectorized)...")
+    # Pre-scale the entire combined dataframe for efficiency
+    lstm_data_to_scale = processed_df[lstm_features_list + ['Demand']].values
+    scaled_full_data = scaler.transform(lstm_data_to_scale)
 
-    # Actual demand and error
+    all_sequences = []
+    for ts in predict_df.index:
+        idx = processed_df.index.get_loc(ts)
+        if idx >= 24:
+            # Extract the 24 hours preceding the current timestamp
+            seq = scaled_full_data[idx-24:idx, :-1]
+        else:
+            # Pad with zeros if 24h history is not available
+            needed = 24
+            available = idx
+            padding = needed - available
+            seq = np.zeros((needed, len(lstm_features_list)))
+            if available > 0:
+                seq[padding:] = scaled_full_data[:idx, :-1]
+        all_sequences.append(seq)
+
+    all_sequences_np = np.array(all_sequences)
+    print(f"Generating LSTM predictions for {len(all_sequences_np)} rows...")
+    lstm_preds_scaled = lstm_model.predict(all_sequences_np, verbose=0)
+
+    # Inverse transform all predictions at once
+    dummy = np.zeros((len(lstm_preds_scaled), len(lstm_features_list) + 1))
+    dummy[:, -1] = lstm_preds_scaled.flatten()
+    predict_df['LSTM Forecast'] = scaler.inverse_transform(dummy)[:, -1]
+
     if 'Demand' in predict_df.columns:
         predict_df['Actual Demand'] = predict_df['Demand']
-        predict_df['Error'] = predict_df['Actual Demand'] - predict_df['Forecast Demand']
-        # Calculate range from history for normalization
-        hist_range = hist_df['Demand'].max() - hist_df['Demand'].min()
-        predict_df['Normalized Error (0-1)'] = edf.calculate_normalized_error(
-            predict_df['Actual Demand'],
-            predict_df['Forecast Demand'],
-            range_val=hist_range
-        )
 
-    # Prepare Output CSV
-    output_cols = []
+    # Output
+    cols = ['XGB Forecast', 'LSTM Forecast']
     if 'Actual Demand' in predict_df.columns:
-        output_cols.append('Actual Demand')
-    output_cols.append('Forecast Demand')
-    if 'Actual Demand' in predict_df.columns:
-        output_cols.append('Error')
-        output_cols.append('Normalized Error (0-1)')
+        cols = ['Actual Demand'] + cols
 
-    predict_df[output_cols].to_csv(output_csv)
+    predict_df[cols].to_csv(output_csv)
     print(f"Predictions saved to {output_csv}")
 
-    # Visualizations
     generate_plots(predict_df)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python batch_predict.py <input_csv> [output_csv]")
     else:
-        input_csv = sys.argv[1]
-        output_csv = sys.argv[2] if len(sys.argv) > 2 else 'predictions.csv'
-        main(input_csv, output_csv)
+        main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else 'predictions.csv')
