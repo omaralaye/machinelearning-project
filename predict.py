@@ -139,6 +139,16 @@ def main():
             print(f"Error:             {error:.2f} MW")
             print(f"Normalized Error (0-1): {norm_error:.4f}")
 
+            # Category comparison
+            thresholds = historical_df['Demand'].quantile([0.333, 0.666]).values
+            def get_cat(v):
+                if v <= thresholds[0]: return 'Low'
+                if v <= thresholds[1]: return 'Medium'
+                return 'High'
+
+            print(f"Actual Category:   {get_cat(actual_val)}")
+            print(f"Forecast Category: {get_cat(prediction)}")
+
             if np.abs(error/actual_val) > 0.10:
                 print("RED FLAG - ANOMALY FLAG: actual vs. forecast deviation exceeds 10%")
         except ValueError:
