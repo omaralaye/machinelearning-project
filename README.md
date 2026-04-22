@@ -71,3 +71,17 @@ pip install -r requirements.txt
 1.  Run the `XGBOOST.ipynb` notebook to train and evaluate the XGBoost model.
 2.  Run the `LSTM.ipynb` notebook to train and evaluate the LSTM model.
 3.  Refer to `edf.ipynb` for detailed data exploration.
+
+## How to Use
+
+For detailed instructions on how to use the forecasting model for interactive predictions, batch processing, and performance reporting, please refer to the [Usage Guide](USAGE.md).
+
+### Quick Start: Interactive Prediction
+```bash
+python predict.py
+```
+
+### Quick Start: Batch Prediction
+```bash
+python batch_predict.py input_data.csv output_results.csv
+```
