@@ -3,7 +3,7 @@ import numpy as np
 import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, confusion_matrix, ConfusionMatrixDisplay
 import holidays
 import os
 import sys
@@ -50,9 +50,9 @@ def edf_preprocess(df):
 
     return df
 
-def generate_plots(df):
+def generate_plots(df, hist_df=None):
     """
-    Generates forecast comparison plot and metrics diagram.
+    Generates forecast comparison plot, metrics diagram, and confusion matrix.
     """
     plt.style.use('seaborn-v0_8-darkgrid')
 
@@ -128,6 +128,32 @@ def generate_plots(df):
     plt.tight_layout()
     plt.savefig('metrics_diagram.png')
     print("Metrics diagram saved to metrics_diagram.png")
+
+    # Confusion Matrix (Discretized Demand)
+    if hist_df is not None:
+        # Define demand categories based on historical quantiles
+        low_threshold = hist_df['Demand'].quantile(0.33)
+        high_threshold = hist_df['Demand'].quantile(0.66)
+
+        def categorize(val):
+            if val <= low_threshold: return 'Low'
+            if val <= high_threshold: return 'Medium'
+            return 'High'
+
+        y_true_cat = df['Actual Demand'].apply(categorize)
+        y_pred_cat = df['Forecast Demand'].apply(categorize)
+        labels = ['Low', 'Medium', 'High']
+
+        cm = confusion_matrix(y_true_cat, y_pred_cat, labels=labels)
+
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+        plt.title('Demand Category Confusion Matrix', fontsize=14)
+        plt.xlabel('Predicted Category', fontsize=12)
+        plt.ylabel('Actual Category', fontsize=12)
+        plt.tight_layout()
+        plt.savefig('confusion_matrix.png')
+        print("Confusion matrix saved to confusion_matrix.png")
 
 def main(input_csv, output_csv='predictions.csv'):
     # Load model
@@ -208,7 +234,7 @@ def main(input_csv, output_csv='predictions.csv'):
     print(f"Predictions saved to {output_csv}")
 
     # Visualizations
-    generate_plots(predict_df)
+    generate_plots(predict_df, hist_df)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
