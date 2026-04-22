@@ -4,6 +4,7 @@ import joblib
 import holidays
 from datetime import timedelta
 import sys
+import edf
 
 def prepare_input_features(timestamp, temperature, humidity, historical_df):
     """
@@ -131,7 +132,7 @@ def main():
             error = actual_val - prediction
             # Using same range-normalization as in edf.py
             actual_range = historical_df['Demand'].max() - historical_df['Demand'].min()
-            norm_error = np.abs(error) / actual_range if actual_range != 0 else 0
+            norm_error = edf.calculate_normalized_error(actual_val, prediction, range_val=actual_range)
 
             print(f"\n--- Comparison Report ---")
             print(f"Actual Demand:     {actual_val:.2f} MW")
